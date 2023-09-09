@@ -1,0 +1,112 @@
+version: '3.8'
+services:
+  mydatabase:
+    image: mariadb:latest
+    # ports:
+    #   - 62214:3306
+    environment:
+      MYSQL_DATABASE: dolearn
+      MYSQL_USER: dolearn_user
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: secret
+    volumes:
+      - ./mysql:/var/lib/mysql
+  phpmyadmin:
+    build:
+      context: .
+      dockerfile: phpmyadmin.dockerfile
+    environment:
+      - PMA_ARBITRARY=1
+      - PMA_HOST=mydatabase
+      - PMA_PORT=3306
+      - UPLOAD_LIMIT=3000M
+
+    volumes:
+      - ./ssl:/etc/ssl/myhost
+    depends_on:
+      - mydatabase
+
+  myphpcgi:
+    build:
+      context: .
+      dockerfile: php.dockerfile
+      args:
+        - PHP_INTERPRET_MODE=development
+        - DOMAIN=${DOMAIN}
+        - URL=${URL}
+        - SECURE_URL=${SECURE_URL}
+        - PHPMYADMIN_PORT=${PHPMYADMIN_PORT}
+        - MAX_EXEC_TIME=120
+        - MEMORY_LIMIT=4G
+        - POST_MAX_SIZE=1G
+        - UPLOAD_MAX_FILE_SIZE=2G
+        - PM_MAX_CHILDREN=10
+    volumes:
+      - ./dolearn/:/var/www/html
+      - ./ssl:/etc/ssl/myhost
+    working_dir: /var/www/html
+    environment:
+      #temporarily
+      - DOMAIN=dolearn.test
+      - URL=http://dolearn.test
+      - SECURE_URL=https://dolearn.test
+      - PHPMYADMIN_PORT=62214
+
+  mywebserver:
+    build:
+      context: .
+      args:
+        - DOMAIN=dolearn.test
+        - URL=http://dolearn.test
+        - SECURE_URL=https://dolearn.test
+        - PHPMYADMIN_PORT=62214
+      dockerfile: nginx.dockerfile
+    ports:
+      - 80:80
+      - 443:443
+      - 8080:62214
+    volumes_from:
+      - myphpcgi
+    depends_on:
+      - mydatabase
+      - myphpcgi
+    environment:
+      - DOMAIN=dolearn.test
+      - URL=http://dolearn.test
+      - SECURE_URL=https://dolearn.test
+
+
+
+  artisan:
+    build:
+      context: .
+      args:
+        - PHP_INTERPRET_MODE=development
+        - DOMAIN=dolearn.test
+        - URL=http://dolearn.test
+        - SECURE_URL=https://dolearn.test
+        - PHPMYADMIN_PORT=62214
+        - MAX_EXEC_TIME=120
+        - MEMORY_LIMIT=4G
+        - POST_MAX_SIZE=1G
+        - UPLOAD_MAX_FILE_SIZE=2G
+        - PM_MAX_CHILDREN=10
+      dockerfile: php.dockerfile
+    volumes_from:
+      - myphpcgi
+    working_dir: /var/www/html
+    depends_on:
+      - mydatabase
+    entrypoint: [ "php", "/var/www/html/artisan" ]
+    environment:
+      #temporarily
+      - DOMAIN=dolearn.test
+      - URL=http://dolearn.test
+      - SECURE_URL=https://dolearn.test
+      - PHPMYADMIN_PORT=62214
+#
+#  trivy:
+#    image: aquasec/trivy:latest
+#    volumes:
+#      - ./:/data
+#    command: trivy --exit-code=1 --severity=CRITICAL .
